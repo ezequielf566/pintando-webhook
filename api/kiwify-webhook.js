@@ -2,33 +2,11 @@ import admin from "firebase-admin";
 
 export default async function handler(req, res) {
   try {
-    // 🔍 Depuração: listar variáveis do ambiente
-    const vars = {
-      FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
-      FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL,
-      FIREBASE_PRIVATE_KEY:
-        process.env.FIREBASE_PRIVATE_KEY &&
-        process.env.FIREBASE_PRIVATE_KEY.startsWith("-----BEGIN")
-          ? "✅ OK (detectada)"
-          : "❌ AUSENTE ou mal formatada",
-      FIREBASE_DB_URL: process.env.FIREBASE_DB_URL,
-    };
+    // 🧾 Mostra tudo que o servidor recebeu (para debug)
+    console.log("🧾 Corpo completo recebido:", JSON.stringify(req.body, null, 2));
 
-    console.log("🧪 Variáveis carregadas:", vars);
-
-    // ⚠️ Verificação das variáveis essenciais
-    if (!process.env.FIREBASE_PROJECT_ID)
-      throw new Error("❌ Variável FIREBASE_PROJECT_ID ausente!");
-    if (!process.env.FIREBASE_CLIENT_EMAIL)
-      throw new Error("❌ Variável FIREBASE_CLIENT_EMAIL ausente!");
-    if (!process.env.FIREBASE_PRIVATE_KEY)
-      throw new Error("❌ Variável FIREBASE_PRIVATE_KEY ausente!");
-    if (!process.env.FIREBASE_DB_URL)
-      throw new Error("❌ Variável FIREBASE_DB_URL ausente!");
-
-    // ✅ Inicializa o Firebase apenas uma vez
+    // ✅ Inicialização do Firebase
     if (!admin.apps.length) {
-      console.log("🚀 Inicializando Firebase...");
       admin.initializeApp({
         credential: admin.credential.cert({
           projectId: process.env.FIREBASE_PROJECT_ID,
@@ -37,47 +15,55 @@ export default async function handler(req, res) {
         }),
         databaseURL: process.env.FIREBASE_DB_URL,
       });
-      console.log("✅ Firebase inicializado com sucesso!");
+      console.log("✅ Firebase inicializado!");
     }
 
-    // 🔹 Teste rápido via GET (não grava nada)
+    // 🚫 Rejeita qualquer método diferente de POST
     if (req.method !== "POST") {
-      console.log("⚙️ Endpoint acessado com GET - OK");
       return res
         .status(200)
         .json({ message: "Método não permitido (GET test OK)" });
     }
 
-    // 🧩 Normaliza o payload recebido
-    const payload = req.body.data || req.body;
-    console.log("📦 Payload recebido:", payload);
+    // 🧩 Normaliza os campos possíveis do webhook da Kiwify
+    const data =
+      req.body.data ||
+      req.body.payload ||
+      req.body.webhook ||
+      req.body.event_data ||
+      req.body.purchase ||
+      req.body;
 
-    // 🕵️‍♂️ Detecta campos padrões da Kiwify
-    const status =
-      payload.status ||
-      payload.payment_status ||
-      payload.event ||
-      req.body.status;
-
+    // 🕵️‍♂️ Procura o e-mail em qualquer nível conhecido
     const email =
-      payload.email ||
-      payload.buyer_email ||
-      payload.customer_email ||
-      (payload.client && payload.client.email);
+      data.email ||
+      (data.client && data.client.email) ||
+      (data.buyer && data.buyer.email) ||
+      (data.customer && data.customer.email) ||
+      (data.user && data.user.email) ||
+      (data.order && data.order.email) ||
+      (data.subscription && data.subscription.customer_email);
+
+    // 💰 Status do pagamento
+    const status =
+      data.status ||
+      data.payment_status ||
+      data.event ||
+      (req.body.event && req.body.event.toLowerCase());
+
+    console.log("📦 Dados interpretados:", { email, status });
 
     if (!email) {
-      console.error("❌ Nenhum email encontrado no payload!");
+      console.warn("❌ Nenhum e-mail encontrado no payload recebido!");
       return res.status(400).json({
         error: true,
-        message: "Email não encontrado no corpo do webhook",
-        payload,
+        message: "Nenhum e-mail encontrado no payload recebido!",
+        body: req.body,
       });
     }
 
-    // 💰 Verifica se o pagamento foi aprovado
+    // 💾 Se o pagamento estiver aprovado ou pago
     if (status && status.toLowerCase().includes("paid")) {
-      console.log(`💾 Gravando usuário ativo: ${email}`);
-
       await admin.firestore().collection("usuarios").doc(email).set(
         {
           ativo: true,
@@ -87,11 +73,11 @@ export default async function handler(req, res) {
         { merge: true }
       );
 
-      console.log("✅ Documento criado/atualizado com sucesso!");
+      console.log(`✅ Usuário ${email} gravado/atualizado com sucesso!`);
       return res.status(200).json({ success: true });
     }
 
-    console.log("⚠️ Status diferente de 'paid' - sem gravação.", status);
+    console.log("⚠️ Pagamento ainda não confirmado:", status);
     return res
       .status(200)
       .json({ success: false, motivo: "Pagamento não confirmado" });
