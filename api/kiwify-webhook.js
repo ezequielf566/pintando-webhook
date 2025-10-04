@@ -2,14 +2,17 @@ import admin from "firebase-admin";
 
 export default async function handler(req, res) {
   try {
+    // Mostra o corpo completo recebido
     console.log("🧾 Corpo completo recebido:", JSON.stringify(req.body, null, 2));
 
     // Rejeita GET (teste)
     if (req.method !== "POST") {
-      return res.status(200).json({ message: "Método não permitido (GET test OK)" });
+      return res
+        .status(200)
+        .json({ message: "Método não permitido (GET test OK)" });
     }
 
-    // Inicializa Firebase (só uma vez)
+    // Inicializa o Firebase (só uma vez)
     if (!admin.apps.length) {
       admin.initializeApp({
         credential: admin.credential.cert({
@@ -22,21 +25,28 @@ export default async function handler(req, res) {
       console.log("✅ Firebase inicializado com sucesso!");
     }
 
-    // 🧩 Extrai os campos diretamente do corpo (não há "order")
+    // 🔍 O corpo já contém as chaves diretamente (Customer, Product, etc.)
+    const body = req.body;
+
     const email =
-      req.body.Customer?.email ||
-      req.body.customer?.email ||
-      req.body.CustomerEmail ||
+      body.Customer?.email ||
+      body.customer?.email ||
+      body.CustomerEmail ||
       null;
 
-    const status = req.body.order_status?.toLowerCase() || "";
+    const status =
+      body.order_status?.toLowerCase() ||
+      body.webhook_event_type?.toLowerCase() ||
+      "";
+
     const produto =
-      req.body.Product?.product_name ||
-      req.body.product?.product_name ||
+      body.Product?.product_name ||
+      body.product?.product_name ||
       "Produto Kiwify";
 
     console.log("📦 Dados interpretados:", { email, status, produto });
 
+    // Verifica se o e-mail existe
     if (!email) {
       console.warn("❌ Nenhum e-mail encontrado no payload!");
       return res.status(400).json({
@@ -46,16 +56,20 @@ export default async function handler(req, res) {
       });
     }
 
-    // 💰 Grava se o status for pago
+    // Se o status for "paid" ou "order_approved", grava no Firestore
     if (status === "paid" || status === "order_approved") {
-      await admin.firestore().collection("usuarios").doc(email).set(
-        {
-          ativo: true,
-          produto,
-          dataCompra: new Date().toISOString(),
-        },
-        { merge: true }
-      );
+      await admin
+        .firestore()
+        .collection("usuarios")
+        .doc(email)
+        .set(
+          {
+            ativo: true,
+            produto,
+            dataCompra: new Date().toISOString(),
+          },
+          { merge: true }
+        );
 
       console.log(`✅ Usuário ${email} registrado/atualizado com sucesso!`);
       return res.status(200).json({ success: true });
