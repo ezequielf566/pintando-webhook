@@ -1,33 +1,49 @@
 import admin from "firebase-admin";
 
+// Garante que o body seja parseado corretamente pelo Vercel
+export const config = {
+  api: {
+    bodyParser: true,
+  },
+};
+
 export default async function handler(req, res) {
   try {
-    // Mostra o corpo completo recebido
     console.log("🧾 Corpo completo recebido:", JSON.stringify(req.body, null, 2));
 
-    // Rejeita GET (teste)
+    // Só aceita POST
     if (req.method !== "POST") {
-      return res
-        .status(200)
-        .json({ message: "Método não permitido (GET test OK)" });
+      return res.status(200).json({ message: "Método não permitido (GET test OK)" });
     }
 
-    // Inicializa o Firebase (só uma vez)
+    // 🚀 Logs de inicialização do Firebase
     if (!admin.apps.length) {
-      admin.initializeApp({
-        credential: admin.credential.cert({
-          projectId: process.env.FIREBASE_PROJECT_ID,
-          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-          privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-        }),
-        databaseURL: process.env.FIREBASE_DB_URL,
-      });
-      console.log("✅ Firebase inicializado com sucesso!");
+      console.log("🚀 Tentando inicializar o Firebase com:");
+      console.log("🔹 projectId:", process.env.FIREBASE_PROJECT_ID);
+      console.log("🔹 clientEmail:", process.env.FIREBASE_CLIENT_EMAIL);
+      console.log(
+        "🔹 privateKey começa com:",
+        process.env.FIREBASE_PRIVATE_KEY?.slice(0, 30)
+      );
+      console.log("🔹 databaseURL:", process.env.FIREBASE_DB_URL);
+
+      try {
+        admin.initializeApp({
+          credential: admin.credential.cert({
+            projectId: process.env.FIREBASE_PROJECT_ID,
+            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+            privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+          }),
+          databaseURL: process.env.FIREBASE_DB_URL,
+        });
+        console.log("✅ Firebase inicializado com sucesso!");
+      } catch (error) {
+        console.error("❌ ERRO ao inicializar Firebase:", error);
+      }
     }
 
-    // 🔍 O corpo já contém as chaves diretamente (Customer, Product, etc.)
+    // 🔍 Extrai os campos principais do corpo
     const body = req.body;
-
     const email =
       body.Customer?.email ||
       body.customer?.email ||
@@ -46,17 +62,16 @@ export default async function handler(req, res) {
 
     console.log("📦 Dados interpretados:", { email, status, produto });
 
-    // Verifica se o e-mail existe
     if (!email) {
       console.warn("❌ Nenhum e-mail encontrado no payload!");
       return res.status(400).json({
         error: true,
         message: "Nenhum e-mail encontrado no payload!",
-        body: req.body,
+        body,
       });
     }
 
-    // Se o status for "paid" ou "order_approved", grava no Firestore
+    // 💰 Grava apenas se o pagamento foi aprovado
     if (status === "paid" || status === "order_approved") {
       await admin
         .firestore()
