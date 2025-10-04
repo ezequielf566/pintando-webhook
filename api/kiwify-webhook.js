@@ -2,10 +2,14 @@ import admin from "firebase-admin";
 
 export default async function handler(req, res) {
   try {
-    // 🧾 Mostra tudo que o servidor recebeu (para debug)
     console.log("🧾 Corpo completo recebido:", JSON.stringify(req.body, null, 2));
 
-    // ✅ Inicialização do Firebase
+    // Rejeita requisições que não sejam POST
+    if (req.method !== "POST") {
+      return res.status(200).json({ message: "Método não permitido (GET test OK)" });
+    }
+
+    // Inicializa o Firebase uma única vez
     if (!admin.apps.length) {
       admin.initializeApp({
         credential: admin.credential.cert({
@@ -15,75 +19,48 @@ export default async function handler(req, res) {
         }),
         databaseURL: process.env.FIREBASE_DB_URL,
       });
-      console.log("✅ Firebase inicializado!");
+      console.log("✅ Firebase inicializado com sucesso!");
     }
 
-    // 🚫 Rejeita qualquer método diferente de POST
-    if (req.method !== "POST") {
-      return res
-        .status(200)
-        .json({ message: "Método não permitido (GET test OK)" });
-    }
+    // ✅ Extrai dados do JSON real da Kiwify
+    const order = req.body.order || {};
+    const customer = order.Customer || {};
+    const product = order.Product || {};
 
-    // 🧩 Normaliza os campos possíveis do webhook da Kiwify
-    const data =
-      req.body.data ||
-      req.body.payload ||
-      req.body.webhook ||
-      req.body.event_data ||
-      req.body.purchase ||
-      req.body;
+    const email = customer.email;
+    const status = order.order_status;
+    const nomeProduto = product.product_name || "Produto Kiwify";
 
-    // 🕵️‍♂️ Procura o e-mail em qualquer nível conhecido
-    const email =
-      data.email ||
-      (data.client && data.client.email) ||
-      (data.buyer && data.buyer.email) ||
-      (data.customer && data.customer.email) ||
-      (data.user && data.user.email) ||
-      (data.order && data.order.email) ||
-      (data.subscription && data.subscription.customer_email);
-
-    // 💰 Status do pagamento
-    const status =
-      data.status ||
-      data.payment_status ||
-      data.event ||
-      (req.body.event && req.body.event.toLowerCase());
-
-    console.log("📦 Dados interpretados:", { email, status });
+    console.log("📦 Dados interpretados:", { email, status, nomeProduto });
 
     if (!email) {
-      console.warn("❌ Nenhum e-mail encontrado no payload recebido!");
+      console.warn("❌ Nenhum e-mail encontrado no payload!");
       return res.status(400).json({
         error: true,
-        message: "Nenhum e-mail encontrado no payload recebido!",
+        message: "Nenhum e-mail encontrado no payload!",
         body: req.body,
       });
     }
 
-    // 💾 Se o pagamento estiver aprovado ou pago
-    if (status && status.toLowerCase().includes("paid")) {
+    // 💰 Grava somente se o pagamento foi aprovado
+    if (status && status.toLowerCase() === "paid") {
       await admin.firestore().collection("usuarios").doc(email).set(
         {
           ativo: true,
-          produto: "Pacote Completo",
+          produto: nomeProduto,
           dataCompra: new Date().toISOString(),
         },
         { merge: true }
       );
 
-      console.log(`✅ Usuário ${email} gravado/atualizado com sucesso!`);
+      console.log(`✅ Usuário ${email} registrado com sucesso!`);
       return res.status(200).json({ success: true });
     }
 
     console.log("⚠️ Pagamento ainda não confirmado:", status);
-    return res
-      .status(200)
-      .json({ success: false, motivo: "Pagamento não confirmado" });
+    return res.status(200).json({ success: false, motivo: "Pagamento não confirmado" });
   } catch (err) {
     console.error("❌ ERRO DETECTADO:", err.message);
-    console.error(err.stack);
     return res.status(500).json({
       error: true,
       message: err.message,
