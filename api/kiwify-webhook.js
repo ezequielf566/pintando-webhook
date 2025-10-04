@@ -2,7 +2,10 @@ import admin from "firebase-admin";
 
 export default async function handler(req, res) {
   try {
-    // 🔍 Debug: verificar variáveis de ambiente
+    // 🧪 LOG COMPLETO DE VARIÁVEIS
+    console.log("🧪 Todas as variáveis disponíveis:", Object.keys(process.env).sort());
+
+    // 🔍 Debug: verificar variáveis de ambiente específicas do Firebase
     const vars = {
       FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
       FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL,
