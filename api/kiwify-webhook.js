@@ -2,24 +2,14 @@ import admin from "firebase-admin";
 
 export default async function handler(req, res) {
   try {
-    // 🔎 Tenta garantir que o body é um objeto
-    let body = req.body;
-    if (typeof body === "string") {
-      try {
-        body = JSON.parse(body);
-      } catch (e) {
-        console.error("❌ Erro ao converter body para JSON:", e);
-      }
-    }
-
-    console.log("🧾 Corpo completo recebido:", JSON.stringify(body, null, 2));
+    console.log("🧾 Corpo completo recebido:", JSON.stringify(req.body, null, 2));
 
     // Rejeita GET (teste)
     if (req.method !== "POST") {
       return res.status(200).json({ message: "Método não permitido (GET test OK)" });
     }
 
-    // Inicializa o Firebase
+    // Inicializa Firebase (só uma vez)
     if (!admin.apps.length) {
       admin.initializeApp({
         credential: admin.credential.cert({
@@ -32,31 +22,36 @@ export default async function handler(req, res) {
       console.log("✅ Firebase inicializado com sucesso!");
     }
 
-    // 🔍 Extrai dados possíveis
-    const order = body.order || {};
-    const customer = order.Customer || order.customer || {};
-    const product = order.Product || order.product || {};
+    // 🧩 Extrai os campos diretamente do corpo (não há "order")
+    const email =
+      req.body.Customer?.email ||
+      req.body.customer?.email ||
+      req.body.CustomerEmail ||
+      null;
 
-    const email = customer.email;
-    const status = order.order_status || order.status;
-    const nomeProduto = product.product_name || product.name || "Produto Kiwify";
+    const status = req.body.order_status?.toLowerCase() || "";
+    const produto =
+      req.body.Product?.product_name ||
+      req.body.product?.product_name ||
+      "Produto Kiwify";
 
-    console.log("📦 Dados interpretados:", { email, status, nomeProduto });
+    console.log("📦 Dados interpretados:", { email, status, produto });
 
     if (!email) {
       console.warn("❌ Nenhum e-mail encontrado no payload!");
       return res.status(400).json({
         error: true,
         message: "Nenhum e-mail encontrado no payload!",
-        body,
+        body: req.body,
       });
     }
 
-    if (status && status.toLowerCase() === "paid") {
+    // 💰 Grava se o status for pago
+    if (status === "paid" || status === "order_approved") {
       await admin.firestore().collection("usuarios").doc(email).set(
         {
           ativo: true,
-          produto: nomeProduto,
+          produto,
           dataCompra: new Date().toISOString(),
         },
         { merge: true }
