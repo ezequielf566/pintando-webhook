@@ -1,0 +1,12 @@
+{
+  "name": "pintando-webhook",
+  "version": "1.0.0",
+  "description": "Webhook Kiwify -> Firebase (Pacote Completo)",
+  "main": "api/kiwify-webhook.js",
+  "dependencies": {
+    "firebase-admin": "^11.10.0"
+  },
+  "engines": {
+    "node": "18.x"
+  }
+}
