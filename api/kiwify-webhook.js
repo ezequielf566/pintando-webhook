@@ -2,14 +2,24 @@ import admin from "firebase-admin";
 
 export default async function handler(req, res) {
   try {
-    console.log("🧾 Corpo completo recebido:", JSON.stringify(req.body, null, 2));
+    // 🔎 Tenta garantir que o body é um objeto
+    let body = req.body;
+    if (typeof body === "string") {
+      try {
+        body = JSON.parse(body);
+      } catch (e) {
+        console.error("❌ Erro ao converter body para JSON:", e);
+      }
+    }
 
-    // Rejeita requisições que não sejam POST
+    console.log("🧾 Corpo completo recebido:", JSON.stringify(body, null, 2));
+
+    // Rejeita GET (teste)
     if (req.method !== "POST") {
       return res.status(200).json({ message: "Método não permitido (GET test OK)" });
     }
 
-    // Inicializa o Firebase uma única vez
+    // Inicializa o Firebase
     if (!admin.apps.length) {
       admin.initializeApp({
         credential: admin.credential.cert({
@@ -22,14 +32,14 @@ export default async function handler(req, res) {
       console.log("✅ Firebase inicializado com sucesso!");
     }
 
-    // ✅ Extrai dados do JSON real da Kiwify
-    const order = req.body.order || {};
-    const customer = order.Customer || {};
-    const product = order.Product || {};
+    // 🔍 Extrai dados possíveis
+    const order = body.order || {};
+    const customer = order.Customer || order.customer || {};
+    const product = order.Product || order.product || {};
 
     const email = customer.email;
-    const status = order.order_status;
-    const nomeProduto = product.product_name || "Produto Kiwify";
+    const status = order.order_status || order.status;
+    const nomeProduto = product.product_name || product.name || "Produto Kiwify";
 
     console.log("📦 Dados interpretados:", { email, status, nomeProduto });
 
@@ -38,11 +48,10 @@ export default async function handler(req, res) {
       return res.status(400).json({
         error: true,
         message: "Nenhum e-mail encontrado no payload!",
-        body: req.body,
+        body,
       });
     }
 
-    // 💰 Grava somente se o pagamento foi aprovado
     if (status && status.toLowerCase() === "paid") {
       await admin.firestore().collection("usuarios").doc(email).set(
         {
@@ -53,12 +62,14 @@ export default async function handler(req, res) {
         { merge: true }
       );
 
-      console.log(`✅ Usuário ${email} registrado com sucesso!`);
+      console.log(`✅ Usuário ${email} registrado/atualizado com sucesso!`);
       return res.status(200).json({ success: true });
     }
 
     console.log("⚠️ Pagamento ainda não confirmado:", status);
-    return res.status(200).json({ success: false, motivo: "Pagamento não confirmado" });
+    return res
+      .status(200)
+      .json({ success: false, motivo: "Pagamento não confirmado" });
   } catch (err) {
     console.error("❌ ERRO DETECTADO:", err.message);
     return res.status(500).json({
