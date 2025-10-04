@@ -3,10 +3,11 @@
   "version": "1.0.0",
   "description": "Webhook Kiwify -> Firebase (Pacote Completo)",
   "main": "api/kiwify-webhook.js",
+  "type": "module",
   "dependencies": {
     "firebase-admin": "^11.10.0"
   },
   "engines": {
-    "node": "18.x"
+    "node": "22.x"
   }
 }
